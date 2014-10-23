@@ -7,6 +7,8 @@ import (
 	"image/draw"
 	"io"
 	"math"
+
+	"code.google.com/p/draw2d/draw2d"
 )
 
 var reverseBits = [256]byte{
@@ -119,8 +121,15 @@ const (
 func DrawWave(w Wave) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, imageWidth, imageHeight))
 	draw.Draw(img, img.Bounds(), &image.Uniform{color.White}, image.ZP, draw.Src)
-	for i, sample := range w {
-		img.Set(i, -int(sample)*imageHeight/int(math.MaxInt16)/2+imageHeight/2, color.Black)
+
+	gc := draw2d.NewGraphicContext(img)
+	for x, sample := range w {
+		y := -int(sample)*imageHeight/int(math.MaxInt16)/2 + imageHeight/2
+		if x == 0 {
+			gc.MoveTo(float64(x), float64(y))
+		}
+		gc.LineTo(float64(x), float64(y))
 	}
+	gc.Stroke()
 	return img
 }

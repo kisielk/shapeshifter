@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"html/template"
 	"image/png"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/kisielk/shapeshifter"
+	"github.com/youpy/go-wav"
 )
 
 func fatal(err error) {
@@ -39,6 +40,7 @@ func main() {
 
 	http.HandleFunc("/", handleIndex)
 	http.HandleFunc("/draw", handleDraw)
+	http.HandleFunc("/play", handlePlay)
 	http.ListenAndServe(":8080", nil)
 }
 
@@ -63,8 +65,32 @@ func handleDraw(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	bank, _ := strconv.ParseInt(r.Form.Get("bank"), 10, 64)
 	wave, _ := strconv.ParseInt(r.Form.Get("wave"), 10, 64)
-	log.Println(bank, wave)
 	w.Header().Set("Content-Type", "image/png")
 	img := shapeshifter.DrawWave(banks[int(bank)].Waves[int(wave)])
 	png.Encode(w, img)
+}
+
+const (
+	defaultPlayDuration = 5 * time.Second
+	sampleRate          = 44000
+)
+
+func handlePlay(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	duration, err := time.ParseDuration(r.Form.Get("duration"))
+	if err != nil {
+		duration = defaultPlayDuration
+	}
+	bank, _ := strconv.ParseInt(r.Form.Get("bank"), 10, 64)
+	wave, _ := strconv.ParseInt(r.Form.Get("wave"), 10, 64)
+	w.Header().Set("Content-Type", "audio/x-wav")
+
+	waveSamples := banks[int(bank)].Waves[int(wave)]
+	numSamples := sampleRate * int(duration.Seconds())
+	writer := wav.NewWriter(w, uint32(numSamples), 1, 44000, 16)
+	samples := make([]wav.Sample, numSamples)
+	for i := range samples {
+		samples[i].Values[0] = int(waveSamples[i%len(waveSamples)])
+	}
+	writer.WriteSamples(samples)
 }

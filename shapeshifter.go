@@ -55,6 +55,8 @@ const (
 	nameLength     = 8
 )
 
+type Config [128]Bank
+
 type Bank struct {
 	Name  string
 	Waves [wavesPerBank]Wave
@@ -74,7 +76,19 @@ func (r bitReversingReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
-func Read(r io.ReadSeeker) ([]Bank, error) {
+type bitReversingWriter struct {
+	io.WriteSeeker
+}
+
+func (w bitReversingWriter) Write(b []byte) (int, error) {
+	b2 := make([]byte, len(b))
+	for i, c := range b {
+		b2[i] = reverseBits[c]
+	}
+	return w.WriteSeeker.Write(b2)
+}
+
+func Read(r io.ReadSeeker) (*Config, error) {
 	_, err := r.Seek(namesOffset, 0)
 	if err != nil {
 		return nil, err
@@ -82,14 +96,14 @@ func Read(r io.ReadSeeker) ([]Bank, error) {
 
 	r = bitReversingReader{r}
 
-	banks := make([]Bank, numBanks)
+	var config Config
 	name := make([]byte, nameLength)
-	for i := range banks {
+	for i := range config {
 		_, err := io.ReadFull(r, name)
 		if err != nil {
 			return nil, err
 		}
-		banks[i].Name = string(name)
+		config[i].Name = string(name)
 	}
 
 	_, err = r.Seek(wavesOffset, 0)
@@ -97,20 +111,48 @@ func Read(r io.ReadSeeker) ([]Bank, error) {
 		return nil, err
 	}
 
-	for i := range banks {
+	for i := range config {
 		for j := 0; j < wavesPerBank; j++ {
-			for n := 0; n < samplesPerWave; n++ {
-				var sample int16
-				err := binary.Read(r, binary.LittleEndian, &sample)
-				if err != nil {
-					return nil, err
-				}
-				banks[i].Waves[j][n] = sample
+			err := binary.Read(r, binary.LittleEndian, &config[i].Waves[j])
+			if err != nil {
+				return nil, err
 			}
 		}
 	}
 
-	return banks, nil
+	return &config, nil
+}
+
+func Write(w io.WriteSeeker, config *Config) error {
+	_, err := w.Seek(namesOffset, 0)
+	if err != nil {
+		return err
+	}
+
+	w = bitReversingWriter{w}
+
+	for _, c := range config {
+		_, err := w.Write([]byte(c.Name))
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = w.Seek(wavesOffset, 0)
+	if err != nil {
+		return err
+	}
+
+	for _, c := range config {
+		for _, wave := range c.Waves {
+			err := binary.Write(w, binary.LittleEndian, wave)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 const (
